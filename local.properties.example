@@ -1,0 +1,3 @@
+# Add your Football-Data.org API key here
+# Get it from: https://www.football-data.org/
+FOOTBALL_API_KEY=your_api_key_here
