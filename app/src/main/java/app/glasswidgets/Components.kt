@@ -1,11 +1,5 @@
 package app.glasswidgets
 
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -23,10 +17,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -34,31 +25,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-enum class Screen { HOME, MUSIC, CLOCK, WEATHER }
-
-/** Slowly drifting, heavily blurred color orbs on a near-black base. Gives the glass cards something to sit on. */
-@Composable
-fun AuroraBackground(content: @Composable BoxScope.() -> Unit) {
-    val t = rememberInfiniteTransition(label = "aurora")
-    val a by t.animateFloat(0f, 1f, infiniteRepeatable(tween(14000, easing = LinearEasing), RepeatMode.Reverse), label = "a")
-    val b by t.animateFloat(1f, 0f, infiniteRepeatable(tween(19000, easing = LinearEasing), RepeatMode.Reverse), label = "b")
-    Box(Modifier.fillMaxSize().background(Color(0xFF04050D))) {
-        Box(
-            Modifier
-                .fillMaxSize()
-                .blur(90.dp)
-                .drawBehind {
-                    fun orb(color: Color, fx: Float, fy: Float, r: Float) =
-                        drawCircle(color, radius = size.minDimension * r, center = Offset(size.width * fx, size.height * fy))
-                    orb(Color(0xFF7C3AED), 0.15f + 0.5f * a, 0.12f + 0.2f * b, 0.55f)
-                    orb(Color(0xFF06B6D4), 0.9f - 0.5f * b, 0.40f + 0.2f * a, 0.50f)
-                    orb(Color(0xFFEC4899), 0.2f + 0.4f * b, 0.90f - 0.25f * a, 0.55f)
-                    orb(Color(0xFF2563EB), 0.8f - 0.3f * a, 0.85f, 0.40f)
-                }
-        )
-        content()
-    }
-}
+enum class Screen { HOME, MUSIC, CLOCK, WEATHER, BACKGROUND }
 
 @Composable
 fun GlassPanel(modifier: Modifier = Modifier, corner: Dp = 28.dp, content: @Composable ColumnScope.() -> Unit) {
