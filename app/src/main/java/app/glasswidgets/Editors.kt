@@ -248,6 +248,7 @@ fun ClockEditor(onBack: () -> Unit) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     var s by remember { mutableStateOf(StyleStore.clock(ctx)) }
+    var wallpaperNote by remember { mutableStateOf("") }
     PersistEffect(s) { StyleStore.saveClock(ctx, s); ClockWidget().updateAll(ctx) }
 
     // The user picks a font file themselves (for example one they downloaded); it is copied into app storage.
@@ -276,10 +277,26 @@ fun ClockEditor(onBack: () -> Unit) {
             SliderRow("Width", s.scaleX, 0.35f..1.1f, { s = s.copy(scaleX = it) })
             if (s.fontPath.isEmpty()) SliderRow("Thickness", s.weight, 0.15f..0.5f, { s = s.copy(weight = it) })
             SliderRow("Size", s.sizeFraction, 0.4f..1f, { s = s.copy(sizeFraction = it) })
+            SliderRow("Depth", s.depth, 0f..1f, { s = s.copy(depth = it) })
             ToggleRow("24-hour time", s.use24h) { s = s.copy(use24h = it) }
         }
         GlassPanel {
             PanelTitle("Glass")
+            Button(
+                onClick = {
+                    val p = WallpaperPalette.clockColors(ctx)
+                    if (p != null) {
+                        s = s.copy(topColor = p.top, bottomColor = p.bottom, strokeColor = p.edge)
+                        wallpaperNote = "Colors set from your current wallpaper."
+                    } else {
+                        wallpaperNote = "Couldn't read the wallpaper colors."
+                    }
+                },
+            ) { Text("Match wallpaper") }
+            Text(
+                if (wallpaperNote.isEmpty()) "Picks a soft tint once and keeps it. Press again after you change wallpaper." else wallpaperNote,
+                color = Color(0x99FFFFFF), fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp),
+            )
             ColorField("Top color", s.topColor) { s = s.copy(topColor = it) }
             ColorField("Bottom color", s.bottomColor) { s = s.copy(bottomColor = it) }
             ColorField("Edge color", s.strokeColor) { s = s.copy(strokeColor = it) }
