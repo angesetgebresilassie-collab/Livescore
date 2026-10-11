@@ -1,6 +1,9 @@
 package app.glasswidgets
 
+import android.content.Context
 import android.graphics.*
+import android.net.Uri
+import java.io.File
 
 /**
  * Draws the "glass" layers from code. Glance can't do live blur, so each backdrop is
@@ -63,47 +66,22 @@ object GlassRenderer {
     }
 
     /**
-     * Glass clock. The digits are drawn from code (see StrokeDigits): round-capped strokes,
-     * so width, thickness and size are all settings. The stroke is converted to an outline,
-     * filled with a vertical glass gradient, given a diagonal sheen, and edged with a rim.
+     * Glass clock. The digits come from either code-drawn strokes (StrokeDigits) or a font file the
+     * user imported. Either way the shape is turned into an outline, filled with a vertical glass
+     * gradient, given a diagonal sheen, and edged with a rim.
      */
     fun clock(text: String, s: ClockStyle, wPx: Int, hPx: Int, d: Float): Bitmap {
         val out = Bitmap.createBitmap(wPx, hPx, Bitmap.Config.ARGB_8888)
         val c = Canvas(out)
-        val sw = s.weight.coerceIn(0.12f, 0.6f)
         val dw = s.scaleX.coerceIn(0.3f, 1.4f)
-        val gap = sw * 0.6f
-
-        val strokes = Path()
-        val dots = ArrayList<Float>()
         val m = Matrix()
-        var x = 0f
-        for (ch in text) {
-            if (ch == ':') {
-                val cx = x + sw * 0.4f
-                dots.add(cx); dots.add(0.62f); dots.add(cx); dots.add(1.38f)
-                x += sw * 0.8f + gap
-            } else if (ch in '0'..'9') {
-                val g = Path(StrokeDigits.glyph(ch))
-                m.setScale(dw, 1f)
-                g.transform(m)
-                strokes.addPath(g, x, 0f)
-                x += dw + sw + gap
-            }
-        }
 
-        val unitPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            style = Paint.Style.STROKE
-            strokeWidth = sw
-            strokeCap = Paint.Cap.ROUND
-            strokeJoin = Paint.Join.ROUND
-        }
-        val outline = Path()
-        unitPaint.getFillPath(strokes, outline)
-        for (i in dots.indices step 2) outline.addCircle(dots[i], dots[i + 1], sw * 0.4f, Path.Direction.CW)
+        val tf = if (s.fontPath.isNotEmpty()) FontCache.get(s.fontPath) else null
+        val outline = if (tf != null) fontOutline(text, tf, dw, m) else drawnOutline(text, s, dw, m)
 
         val b = RectF()
         outline.computeBounds(b, true)
+        if (b.width() <= 0f || b.height() <= 0f) return out
         val k = minOf(wPx * 0.98f / b.width(), hPx * s.sizeFraction.coerceIn(0.2f, 1f) / b.height())
         m.reset()
         m.postTranslate(-b.centerX(), -b.centerY())
@@ -132,12 +110,87 @@ object GlassRenderer {
         return out
     }
 
+    /** Outline of the text in the imported font, squeezed horizontally by the width setting. */
+    private fun fontOutline(text: String, tf: Typeface, dw: Float, m: Matrix): Path {
+        val p = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            typeface = tf
+            textSize = 200f
+        }
+        val raw = Path()
+        p.getTextPath(text, 0, text.length, 0f, 0f, raw)
+        m.setScale(dw, 1f)
+        raw.transform(m)
+        return raw
+    }
+
+    /** Outline of the code-drawn rounded digits (strokes converted to filled geometry). */
+    private fun drawnOutline(text: String, s: ClockStyle, dw: Float, m: Matrix): Path {
+        val sw = s.weight.coerceIn(0.12f, 0.6f)
+        val gap = sw * 0.6f
+        val strokes = Path()
+        val dots = ArrayList<Float>()
+        var x = 0f
+        for (ch in text) {
+            if (ch == ':') {
+                val cx = x + sw * 0.4f
+                dots.add(cx); dots.add(0.62f); dots.add(cx); dots.add(1.38f)
+                x += sw * 0.8f + gap
+            } else if (ch in '0'..'9') {
+                val g = Path(StrokeDigits.glyph(ch))
+                m.setScale(dw, 1f)
+                g.transform(m)
+                strokes.addPath(g, x, 0f)
+                x += dw + sw + gap
+            }
+        }
+        val unitPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.STROKE
+            strokeWidth = sw
+            strokeCap = Paint.Cap.ROUND
+            strokeJoin = Paint.Join.ROUND
+        }
+        val outline = Path()
+        unitPaint.getFillPath(strokes, outline)
+        for (i in dots.indices step 2) outline.addCircle(dots[i], dots[i + 1], sw * 0.4f, Path.Direction.CW)
+        return outline
+    }
+
     private fun drawCrop(c: Canvas, b: Bitmap, dst: RectF) {
         val scale = maxOf(dst.width() / b.width, dst.height() / b.height)
         val sw = dst.width() / scale; val sh = dst.height() / scale
         val src = Rect(((b.width - sw) / 2).toInt(), ((b.height - sh) / 2).toInt(),
             ((b.width + sw) / 2).toInt(), ((b.height + sh) / 2).toInt())
         c.drawBitmap(b, src, dst, Paint(Paint.FILTER_BITMAP_FLAG))
+    }
+}
+
+/** Loads imported font files once. Each import gets a new file name, so a path is never stale. */
+object FontCache {
+    private val cache = HashMap<String, Typeface>()
+    fun get(path: String): Typeface? {
+        cache[path]?.let { return it }
+        return try {
+            Typeface.createFromFile(path).also { cache[path] = it }
+        } catch (e: Exception) {
+            null
+        }
+    }
+}
+
+/**
+ * Lets the user bring their own font file for the clock (for example one they downloaded themselves).
+ * Nothing is bundled in the app.
+ */
+object ClockFontStore {
+    /** Copies the picked file into app storage and checks that it loads. Returns its path, or null. */
+    fun import(c: Context, uri: Uri): String? = try {
+        c.filesDir.listFiles { f -> f.name.startsWith("clock_font_") }?.forEach { it.delete() }
+        val dest = File(c.filesDir, "clock_font_${System.currentTimeMillis()}")
+        c.contentResolver.openInputStream(uri)?.use { input -> dest.outputStream().use { input.copyTo(it) } }
+        Typeface.createFromFile(dest)
+        dest.path
+    } catch (e: Exception) {
+        null
     }
 }
 
