@@ -67,13 +67,16 @@ object GlassRenderer {
 
     /**
      * Glass clock. The digits come from either code-drawn strokes (StrokeDigits) or a font file the
-     * user imported. Either way the shape is turned into an outline, filled with a vertical glass
-     * gradient, given a diagonal sheen, and edged with a rim.
+     * user imported. Either way the shape is turned into an outline, then built up in layers:
+     * drop shadow (outside only) -> glass gradient fill -> diagonal sheen -> inner bevel
+     * (light on the top-left edges, shade on the bottom-right) -> rim. The depth setting scales
+     * the shadow and the bevel.
      */
     fun clock(text: String, s: ClockStyle, wPx: Int, hPx: Int, d: Float): Bitmap {
         val out = Bitmap.createBitmap(wPx, hPx, Bitmap.Config.ARGB_8888)
         val c = Canvas(out)
         val dw = s.scaleX.coerceIn(0.3f, 1.4f)
+        val depth = s.depth.coerceIn(0f, 1f)
         val m = Matrix()
 
         val tf = if (s.fontPath.isNotEmpty()) FontCache.get(s.fontPath) else null
@@ -82,25 +85,68 @@ object GlassRenderer {
         val b = RectF()
         outline.computeBounds(b, true)
         if (b.width() <= 0f || b.height() <= 0f) return out
-        val k = minOf(wPx * 0.98f / b.width(), hPx * s.sizeFraction.coerceIn(0.2f, 1f) / b.height())
+
+        // Leave a little room so the drop shadow is not clipped by the bitmap edge.
+        val shadowOff = (2f + 5f * depth) * d
+        val k = minOf(wPx * 0.96f / b.width(), (hPx - shadowOff * 2f) * s.sizeFraction.coerceIn(0.2f, 1f) / b.height())
         m.reset()
         m.postTranslate(-b.centerX(), -b.centerY())
         m.postScale(k, k)
-        m.postTranslate(wPx / 2f, hPx / 2f)
+        m.postTranslate(wPx / 2f, hPx / 2f - shadowOff * 0.5f)
         outline.transform(m)
 
         val tb = RectF()
         outline.computeBounds(tb, true)
+
+        // 1. Drop shadow, only outside the digits so the glass fill stays clear.
+        if (depth > 0f) {
+            c.save()
+            c.clipOutPath(outline)
+            val shadow = Path(outline).apply { offset(0f, shadowOff) }
+            c.drawPath(shadow, Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = Color.argb((35 + 110 * depth).toInt(), 0, 0, 0)
+                maskFilter = BlurMaskFilter((3f + 8f * depth) * d, BlurMaskFilter.Blur.NORMAL)
+            })
+            c.restore()
+        }
+
+        // 2. Glass fill
         c.drawPath(outline, Paint(Paint.ANTI_ALIAS_FLAG).apply {
             style = Paint.Style.FILL
             shader = LinearGradient(0f, tb.top, 0f, tb.bottom, s.topColor, s.bottomColor, Shader.TileMode.CLAMP)
         })
+
         c.save()
         c.clipPath(outline)
+
+        // 3. Diagonal sheen
         c.drawRect(tb, Paint().apply {
             shader = LinearGradient(tb.left, tb.top, tb.right, tb.bottom, 0x33FFFFFF, 0x00FFFFFF, Shader.TileMode.CLAMP)
         })
+
+        // 4. Inner bevel: the "outside" region, shifted and blurred, bleeds light/shade into the edges.
+        if (depth > 0f) {
+            val pad = 40f * d
+            val inverse = Path().apply {
+                fillType = Path.FillType.EVEN_ODD
+                addRect(tb.left - pad, tb.top - pad, tb.right + pad, tb.bottom + pad, Path.Direction.CW)
+                addPath(outline)
+            }
+            val o = (1.2f + 2.4f * depth) * d
+            // light edge, top-left
+            c.drawPath(Path(inverse).apply { offset(o, o) }, Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = Color.argb((200 * depth).toInt(), 255, 255, 255)
+                maskFilter = BlurMaskFilter(o * 1.1f, BlurMaskFilter.Blur.NORMAL)
+            })
+            // shaded edge, bottom-right
+            c.drawPath(Path(inverse).apply { offset(-o, -o) }, Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = Color.argb((140 * depth).toInt(), 0, 0, 0)
+                maskFilter = BlurMaskFilter(o * 1.6f, BlurMaskFilter.Blur.NORMAL)
+            })
+        }
         c.restore()
+
+        // 5. Rim
         c.drawPath(outline, Paint(Paint.ANTI_ALIAS_FLAG).apply {
             style = Paint.Style.STROKE
             strokeWidth = s.strokeDp * d
