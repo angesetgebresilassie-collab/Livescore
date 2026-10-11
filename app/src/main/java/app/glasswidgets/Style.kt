@@ -39,6 +39,7 @@ data class ClockStyle(
     val textColor: Int = Color.WHITE,
     val weight: Float = 0.30f,        // stroke thickness of the drawn digits (in digit units)
     val fontPath: String = "",        // empty = drawn digits; otherwise a font file the user imported
+    val depth: Float = 0.6f,          // 0 = flat, 1 = deep (drop shadow + inner bevel on the digits)
 )
 
 data class WeatherStyle(
@@ -74,6 +75,7 @@ object StyleStore {
             p.getInt("c.top", d.topColor), p.getInt("c.bottom", d.bottomColor), p.getInt("c.stroke", d.strokeColor),
             p.getFloat("c.strokeDp", d.strokeDp), p.getBoolean("c.date", d.showDate), p.getInt("c.text", d.textColor),
             p.getFloat("c.weight", d.weight), p.getString("c.font", d.fontPath) ?: "",
+            p.getFloat("c.depth", d.depth),
         )
     }
 
@@ -81,7 +83,7 @@ object StyleStore {
         .putBoolean("c.24h", s.use24h).putFloat("c.scaleX", s.scaleX).putFloat("c.size", s.sizeFraction)
         .putInt("c.top", s.topColor).putInt("c.bottom", s.bottomColor).putInt("c.stroke", s.strokeColor)
         .putFloat("c.strokeDp", s.strokeDp).putBoolean("c.date", s.showDate).putInt("c.text", s.textColor)
-        .putFloat("c.weight", s.weight).putString("c.font", s.fontPath).apply()
+        .putFloat("c.weight", s.weight).putString("c.font", s.fontPath).putFloat("c.depth", s.depth).apply()
 
     fun weather(c: Context): WeatherStyle {
         val d = WeatherStyle(); val p = sp(c)
