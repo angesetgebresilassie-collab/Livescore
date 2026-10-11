@@ -20,6 +20,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.rememberCoroutineScope
@@ -35,6 +36,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -45,8 +48,8 @@ enum class BgMode { SOLID, GRADIENT, IMAGE }
 /** The app's own background (not the widgets). The user picks it; nothing animated. */
 data class AppBackground(
     val mode: BgMode = BgMode.GRADIENT,
-    val color1: Int = 0xFF0B1020.toInt(),
-    val color2: Int = 0xFF2B1055.toInt(),
+    val color1: Int = 0xFF172554.toInt(),
+    val color2: Int = 0xFF9333EA.toInt(),
     val dim: Float = 0f,          // black overlay, helps text stay readable over photos
     val imageStamp: Long = 0L,    // changes when a new photo is picked so it reloads
 )
@@ -86,20 +89,27 @@ object BackgroundStore {
     }
 }
 
+/**
+ * Draws the user's background and captures it as the Liquid Glass backdrop. Panels are drawn
+ * above the captured layer (not inside it), so they refract the background without sampling themselves.
+ */
 @Composable
 fun AppBackdrop(bg: AppBackground, content: @Composable BoxScope.() -> Unit) {
     val ctx = LocalContext.current
+    val backdrop = rememberLayerBackdrop()
     val image by produceState<ImageBitmap?>(null, bg.imageStamp, bg.mode) {
         value = if (bg.mode == BgMode.IMAGE) withContext(Dispatchers.IO) {
             BitmapFactory.decodeFile(BackgroundStore.file(ctx).path)?.asImageBitmap()
         } else null
     }
     Box(Modifier.fillMaxSize()) {
-        val second = if (bg.mode == BgMode.SOLID) bg.color1 else bg.color2
-        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(bg.color1), Color(second)))))
-        image?.let { Image(it, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
-        if (bg.dim > 0f) Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = bg.dim)))
-        content()
+        Box(Modifier.fillMaxSize().layerBackdrop(backdrop)) {
+            val second = if (bg.mode == BgMode.SOLID) bg.color1 else bg.color2
+            Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(bg.color1), Color(second)))))
+            image?.let { Image(it, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
+            if (bg.dim > 0f) Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = bg.dim)))
+        }
+        CompositionLocalProvider(LocalBackdrop provides backdrop) { content() }
     }
 }
 
