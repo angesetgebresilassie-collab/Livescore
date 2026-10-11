@@ -11,6 +11,8 @@ import android.graphics.Paint
 import android.graphics.Shader
 import android.provider.Settings
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -27,6 +29,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -44,7 +47,10 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 // ───────────── Live previews (same renderer the widgets use) ─────────────
 
@@ -240,14 +246,35 @@ fun MusicEditor(onBack: () -> Unit) {
 @Composable
 fun ClockEditor(onBack: () -> Unit) {
     val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
     var s by remember { mutableStateOf(StyleStore.clock(ctx)) }
     PersistEffect(s) { StyleStore.saveClock(ctx, s); ClockWidget().updateAll(ctx) }
 
+    // The user picks a font file themselves (for example one they downloaded); it is copied into app storage.
+    val fontPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) scope.launch {
+            val path = withContext(Dispatchers.IO) { ClockFontStore.import(ctx, uri) }
+            if (path != null) s = s.copy(fontPath = path)
+        }
+    }
+
     EditorScaffold("Clock widget", onBack, ClockWidgetReceiver::class.java, { ClockPreview(s, 320.dp, 170.dp) }) {
+        GlassPanel {
+            PanelTitle("Font")
+            Segmented(listOf("Drawn digits", "My font"), if (s.fontPath.isEmpty()) 0 else 1) {
+                if (it == 0) s = s.copy(fontPath = "") else fontPicker.launch(arrayOf("*/*"))
+            }
+            if (s.fontPath.isNotEmpty()) {
+                Text(
+                    "Using the font file you imported. Tap \"My font\" again to pick a different one.",
+                    color = Color(0x99FFFFFF), fontSize = 13.sp, modifier = Modifier.padding(top = 8.dp),
+                )
+            }
+        }
         GlassPanel {
             PanelTitle("Digits")
             SliderRow("Width", s.scaleX, 0.35f..1.1f, { s = s.copy(scaleX = it) })
-            SliderRow("Thickness", s.weight, 0.15f..0.5f, { s = s.copy(weight = it) })
+            if (s.fontPath.isEmpty()) SliderRow("Thickness", s.weight, 0.15f..0.5f, { s = s.copy(weight = it) })
             SliderRow("Size", s.sizeFraction, 0.4f..1f, { s = s.copy(sizeFraction = it) })
             ToggleRow("24-hour time", s.use24h) { s = s.copy(use24h = it) }
         }
