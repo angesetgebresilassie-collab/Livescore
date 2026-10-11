@@ -11,6 +11,7 @@ import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -18,27 +19,46 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.kyant.backdrop.Backdrop
+import com.kyant.backdrop.drawBackdrop
+import com.kyant.backdrop.effects.blur
+import com.kyant.backdrop.effects.lens
+import com.kyant.backdrop.effects.vibrancy
 
 enum class Screen { HOME, MUSIC, CLOCK, WEATHER, BACKGROUND }
 
+/** The captured app background. Every GlassPanel refracts whatever is behind it through this. */
+val LocalBackdrop = compositionLocalOf<Backdrop?> { null }
+
+/**
+ * Real Liquid Glass (Kyant0 Backdrop): the panel samples the background behind it and applies
+ * vibrancy, a light blur and lens refraction at the edges, so the background bends through the glass.
+ */
 @Composable
 fun GlassPanel(modifier: Modifier = Modifier, corner: Dp = 28.dp, content: @Composable ColumnScope.() -> Unit) {
+    val backdrop = LocalBackdrop.current
     val shape = RoundedCornerShape(corner)
-    Column(
-        modifier
-            .fillMaxWidth()
-            .clip(shape)
-            .background(Brush.linearGradient(listOf(Color(0x40FFFFFF), Color(0x14FFFFFF))))
-            .border(1.dp, Brush.linearGradient(listOf(Color(0xAAFFFFFF), Color(0x11FFFFFF), Color(0x55FFFFFF))), shape)
-            .padding(18.dp),
-        content = content,
-    )
+    val base = modifier.fillMaxWidth()
+    val glass = if (backdrop != null) {
+        base.drawBackdrop(
+            backdrop = backdrop,
+            shape = { shape },
+            effects = {
+                vibrancy()
+                blur(2f.dp.toPx())
+                lens(16f.dp.toPx(), 32f.dp.toPx())
+            },
+            onDrawSurface = { drawRect(Color.White.copy(alpha = 0.10f)) },
+        )
+    } else {
+        base.clip(shape).background(Color(0x22FFFFFF))
+    }
+    Column(glass.padding(18.dp), content = content)
 }
 
 @Composable
