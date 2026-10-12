@@ -27,19 +27,20 @@ data class MusicStyle(
     }
 }
 
+/** Defaults match the iOS lock-screen clock: tall, narrow, even-weight digits in a translucent wallpaper tint. */
 data class ClockStyle(
     val use24h: Boolean = false,
-    val scaleX: Float = 0.62f,        // digit width (digit height is fixed at 2 units)
+    val scaleX: Float = 0.46f,        // digit width (digit height is fixed at 2 units)
     val sizeFraction: Float = 1.0f,   // how much of the widget height the digits fill
-    val topColor: Int = 0x88A5ADB5.toInt(),
-    val bottomColor: Int = 0xEEF2F6FA.toInt(),
-    val strokeColor: Int = 0x55FFFFFF,
-    val strokeDp: Float = 1.5f,       // rim thickness
+    val topColor: Int = 0xA8A5B8D0.toInt(),
+    val bottomColor: Int = 0xBCD8E4F2.toInt(),
+    val strokeColor: Int = 0x88FFFFFF.toInt(),
+    val strokeDp: Float = 1.2f,       // rim thickness
     val showDate: Boolean = true,
     val textColor: Int = Color.WHITE,
-    val weight: Float = 0.30f,        // stroke thickness of the drawn digits (in digit units)
+    val weight: Float = 0.20f,        // stroke thickness of the drawn digits (in digit units)
     val fontPath: String = "",        // empty = drawn digits; otherwise a font file the user imported
-    val depth: Float = 0.6f,          // 0 = flat, 1 = deep (drop shadow + inner bevel on the digits)
+    val depth: Float = 0f,            // optional drop shadow + bevel; off by default
 )
 
 data class WeatherStyle(
@@ -68,22 +69,29 @@ object StyleStore {
         .putFloat("m.artSize", s.artSize).putInt("m.text", s.textColor).putBoolean("m.artist", s.showArtist)
         .putBoolean("m.chip", s.showStatusChip).apply()
 
+    // Clock keys carry a "2" suffix so older saved looks do not override the new lock-screen defaults.
     fun clock(c: Context): ClockStyle {
         val d = ClockStyle(); val p = sp(c)
+        // First run: pick the glass tint from the wallpaper once and keep it.
+        if (!p.contains("c.top2")) {
+            WallpaperPalette.clockColors(c)?.let {
+                p.edit().putInt("c.top2", it.top).putInt("c.bottom2", it.bottom).putInt("c.stroke2", it.edge).apply()
+            }
+        }
         return ClockStyle(
-            p.getBoolean("c.24h", d.use24h), p.getFloat("c.scaleX", d.scaleX), p.getFloat("c.size", d.sizeFraction),
-            p.getInt("c.top", d.topColor), p.getInt("c.bottom", d.bottomColor), p.getInt("c.stroke", d.strokeColor),
-            p.getFloat("c.strokeDp", d.strokeDp), p.getBoolean("c.date", d.showDate), p.getInt("c.text", d.textColor),
-            p.getFloat("c.weight", d.weight), p.getString("c.font", d.fontPath) ?: "",
-            p.getFloat("c.depth", d.depth),
+            p.getBoolean("c.24h", d.use24h), p.getFloat("c.scaleX2", d.scaleX), p.getFloat("c.size", d.sizeFraction),
+            p.getInt("c.top2", d.topColor), p.getInt("c.bottom2", d.bottomColor), p.getInt("c.stroke2", d.strokeColor),
+            p.getFloat("c.strokeDp2", d.strokeDp), p.getBoolean("c.date", d.showDate), p.getInt("c.text", d.textColor),
+            p.getFloat("c.weight2", d.weight), p.getString("c.font", d.fontPath) ?: "",
+            p.getFloat("c.depth2", d.depth),
         )
     }
 
     fun saveClock(c: Context, s: ClockStyle) = sp(c).edit()
-        .putBoolean("c.24h", s.use24h).putFloat("c.scaleX", s.scaleX).putFloat("c.size", s.sizeFraction)
-        .putInt("c.top", s.topColor).putInt("c.bottom", s.bottomColor).putInt("c.stroke", s.strokeColor)
-        .putFloat("c.strokeDp", s.strokeDp).putBoolean("c.date", s.showDate).putInt("c.text", s.textColor)
-        .putFloat("c.weight", s.weight).putString("c.font", s.fontPath).putFloat("c.depth", s.depth).apply()
+        .putBoolean("c.24h", s.use24h).putFloat("c.scaleX2", s.scaleX).putFloat("c.size", s.sizeFraction)
+        .putInt("c.top2", s.topColor).putInt("c.bottom2", s.bottomColor).putInt("c.stroke2", s.strokeColor)
+        .putFloat("c.strokeDp2", s.strokeDp).putBoolean("c.date", s.showDate).putInt("c.text", s.textColor)
+        .putFloat("c.weight2", s.weight).putString("c.font", s.fontPath).putFloat("c.depth2", s.depth).apply()
 
     fun weather(c: Context): WeatherStyle {
         val d = WeatherStyle(); val p = sp(c)
