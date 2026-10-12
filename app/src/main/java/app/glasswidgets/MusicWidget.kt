@@ -3,10 +3,12 @@ package app.glasswidgets
 import android.content.ComponentName
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.media.MediaMetadata
 import android.media.session.MediaController
 import android.media.session.MediaSessionManager
 import android.media.session.PlaybackState
+import android.net.Uri
 import android.service.notification.NotificationListenerService
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
@@ -34,6 +36,7 @@ import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
 import androidx.glance.unit.ColorProvider
 import kotlinx.coroutines.*
+import java.net.URL
 
 object NowPlaying {
     @Volatile var title = ""
@@ -48,16 +51,39 @@ object NowPlaying {
 class MediaListener : NotificationListenerService() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var current: MediaController? = null
+    private var lastArtUri: String? = null
+    private var lastTrack = ""
+    private val me by lazy { ComponentName(this, MediaListener::class.java) }
+    private val msm by lazy { getSystemService(MediaSessionManager::class.java) }
+
     private val cb = object : MediaController.Callback() {
         override fun onMetadataChanged(metadata: MediaMetadata?) = push()
-        override fun onPlaybackStateChanged(state: PlaybackState?) = push()
+        override fun onPlaybackStateChanged(state: PlaybackState?) = repick()
+        override fun onSessionDestroyed() = repick()
     }
 
     override fun onListenerConnected() {
-        val msm = getSystemService(MediaSessionManager::class.java)
-        val me = ComponentName(this, MediaListener::class.java)
-        msm.addOnActiveSessionsChangedListener({ bind(it?.firstOrNull()) }, me)
-        bind(msm.getActiveSessions(me).firstOrNull())
+        msm.addOnActiveSessionsChangedListener({ bind(pick(it)) }, me)
+        repick()
+    }
+
+    override fun onListenerDisconnected() {
+        NotificationListenerService.requestRebind(me)
+    }
+
+    override fun onDestroy() {
+        scope.cancel()
+        super.onDestroy()
+    }
+
+    /** Prefer whichever app is actually playing right now, otherwise the first active session. */
+    private fun pick(list: List<MediaController>?): MediaController? =
+        list?.firstOrNull { it.playbackState?.state == PlaybackState.STATE_PLAYING } ?: list?.firstOrNull()
+
+    private fun repick() {
+        val list = try { msm.getActiveSessions(me) } catch (e: SecurityException) { null }
+        val best = pick(list)
+        if (best?.sessionToken != current?.sessionToken) bind(best) else push()
     }
 
     private fun bind(c: MediaController?) {
@@ -70,14 +96,62 @@ class MediaListener : NotificationListenerService() {
     private fun push() {
         val m = current?.metadata
         val playing = current?.playbackState?.state == PlaybackState.STATE_PLAYING
-        if (!playing && NowPlaying.playing) NowPlaying.pausedAt = System.currentTimeMillis()
+        val now = System.currentTimeMillis()
+        // Start the paused timer at the moment playback stops (never leave it at 0, which showed a huge number).
+        if (playing) NowPlaying.pausedAt = 0L
+        else if (NowPlaying.playing || NowPlaying.pausedAt == 0L) NowPlaying.pausedAt = now
         NowPlaying.playing = playing
+
         NowPlaying.title = m?.getString(MediaMetadata.METADATA_KEY_TITLE).orEmpty()
         NowPlaying.artist = (m?.getString(MediaMetadata.METADATA_KEY_ARTIST)
             ?: m?.getString(MediaMetadata.METADATA_KEY_ALBUM_ARTIST)).orEmpty()
-        val raw = m?.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART) ?: m?.getBitmap(MediaMetadata.METADATA_KEY_ART)
-        NowPlaying.art = raw?.let { Bitmap.createScaledBitmap(it, 600, 600, true) }
+        val track = "${NowPlaying.title}|${NowPlaying.artist}"
+
+        // Many players only give a picture link, or put the cover under a different key, so try all of them.
+        val bmp = m?.let {
+            it.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART)
+                ?: it.getBitmap(MediaMetadata.METADATA_KEY_ART)
+                ?: it.getBitmap(MediaMetadata.METADATA_KEY_DISPLAY_ICON)
+        }
+        val uri = m?.let {
+            it.getString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI)
+                ?: it.getString(MediaMetadata.METADATA_KEY_ART_URI)
+                ?: it.getString(MediaMetadata.METADATA_KEY_DISPLAY_ICON_URI)
+        }
+        when {
+            bmp != null -> { NowPlaying.art = fit(bmp); lastArtUri = null }
+            uri != null && uri != lastArtUri -> {
+                lastArtUri = uri
+                if (track != lastTrack) NowPlaying.art = null
+                scope.launch {
+                    val b = withContext(Dispatchers.IO) { loadUri(uri) }
+                    if (b != null && lastArtUri == uri) {
+                        NowPlaying.art = fit(b)
+                        MusicWidget().updateAll(applicationContext)
+                    }
+                }
+            }
+            uri != null -> Unit // same picture link as before: keep the art we already have
+            track != lastTrack -> NowPlaying.art = null
+        }
+        lastTrack = track
         scope.launch { MusicWidget().updateAll(applicationContext) }
+    }
+
+    private fun loadUri(u: String): Bitmap? = try {
+        val uri = Uri.parse(u)
+        val stream = if (uri.scheme == "http" || uri.scheme == "https") URL(u).openStream() else contentResolver.openInputStream(uri)
+        stream?.use { BitmapFactory.decodeStream(it) }
+    } catch (e: Exception) {
+        null
+    }
+
+    /** Shrinks big covers but keeps their proportions (the card crops to fit). */
+    private fun fit(b: Bitmap, max: Int = 600): Bitmap {
+        val big = maxOf(b.width, b.height)
+        if (big <= max) return b
+        val k = max / big.toFloat()
+        return Bitmap.createScaledBitmap(b, (b.width * k).toInt().coerceAtLeast(1), (b.height * k).toInt().coerceAtLeast(1), true)
     }
 }
 
