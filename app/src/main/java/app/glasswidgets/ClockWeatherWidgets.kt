@@ -46,9 +46,11 @@ class ClockWidget : GlanceAppWidget() {
         provideContent {
             val size = LocalSize.current
             val d = context.resources.displayMetrics.density
-            val w = minOf((size.width.value * d).toInt(), 1100).coerceAtLeast(1)
+            val w = (size.width.value * d).toInt().coerceAtLeast(1)
             val dateH = if (s.showDate) 28f else 0f
-            val h = minOf(((size.height.value - dateH) * d).toInt(), 1100).coerceAtLeast(1)
+            val h = ((size.height.value - dateH) * d).toInt().coerceAtLeast(1)
+            // Render above the on-screen size so the glass digits stay sharp; the launcher scales it down.
+            val k = HiRes.boost(context, w, h)
             val now = LocalDateTime.now()
             val time = now.format(DateTimeFormatter.ofPattern(if (s.use24h) "H:mm" else "h:mm"))
             Column(GlanceModifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -57,7 +59,7 @@ class ClockWidget : GlanceAppWidget() {
                     style = TextStyle(color = ColorProvider(Color(s.textColor)), fontSize = 18.sp,
                         fontWeight = FontWeight.Bold, textAlign = TextAlign.Center),
                 )
-                Image(ImageProvider(GlassRenderer.clock(time, s, w, h, d)), null,
+                Image(ImageProvider(GlassRenderer.clock(time, s, (w * k).toInt(), (h * k).toInt(), d * k)), null,
                     GlanceModifier.fillMaxWidth().defaultWeight(), contentScale = ContentScale.Fit)
             }
         }
