@@ -146,8 +146,8 @@ class MediaListener : NotificationListenerService() {
         null
     }
 
-    /** Shrinks big covers but keeps their proportions (the card crops to fit). */
-    private fun fit(b: Bitmap, max: Int = 600): Bitmap {
+    /** Keeps covers sharp (up to 1200px) but never bigger, and keeps their proportions (the card crops to fit). */
+    private fun fit(b: Bitmap, max: Int = 1200): Bitmap {
         val big = maxOf(b.width, b.height)
         if (big <= max) return b
         val k = max / big.toFloat()
@@ -179,9 +179,11 @@ class MusicWidgetReceiver : GlanceAppWidgetReceiver() {
 private fun MusicCard(ctx: Context, s: MusicStyle) {
     val size = LocalSize.current
     val d = ctx.resources.displayMetrics.density
-    val w = minOf((size.width.value * d).toInt(), 700).coerceAtLeast(1)
-    val h = minOf((size.height.value * d).toInt(), 700).coerceAtLeast(1)
-    val bg = GlassRenderer.musicCard(NowPlaying.art, s, w, h, d)
+    val w = (size.width.value * d).toInt().coerceAtLeast(1)
+    val h = (size.height.value * d).toInt().coerceAtLeast(1)
+    // Render above the on-screen size so the card and cover stay sharp; the launcher scales it down.
+    val k = HiRes.boost(ctx, w, h)
+    val bg = GlassRenderer.musicCard(NowPlaying.art, s, (w * k).toInt(), (h * k).toInt(), d * k)
     val text = ColorProvider(Color(s.textColor))
 
     Box(GlanceModifier.fillMaxSize().clickable(actionRunCallback<PlayPauseAction>())) {
